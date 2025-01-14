@@ -13,11 +13,15 @@ const GAS_OPTIONS = [
     { clicks: 500_000, eth: '0.5' },
 ]
 
-export default function PreloadGas({ onClose }: { onClose: () => void }) {
+interface PreloadGasProps {
+    onClose: () => void;
+}
+
+export default function PreloadGas({ onClose }: PreloadGasProps) {
     const { address } = useAccount()
     const [selectedOption, setSelectedOption] = useState(0)
     const [isLoading, setIsLoading] = useState(false)
-    const [step, setStep] = useState<'register' | 'preload'>('register')
+    const [step, setStep] = useState(getStoredWallet() ? 'preload' : 'register')
 
     const { writeContractAsync } = useWriteContract()
     const { sendTransaction } = useSendTransaction()

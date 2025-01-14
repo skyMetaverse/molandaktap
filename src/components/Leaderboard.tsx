@@ -1,52 +1,76 @@
-import { useReadContracts } from 'wagmi'
+import { useReadContracts, useReadContract } from 'wagmi'
 import { CONTRACT_ABI, CONTRACT_ADDRESS } from '@/config/contract'
 import { formatAddress } from '@/utils/format'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 
 interface PlayerStats {
-    address: string
+    address: `0x${string}`
     clickCount: bigint
 }
 
-type GetAllPlayersResult = readonly `0x${string}`[]
+const UPDATE_INTERVAL = 60 * 60 * 1000
 
 export default function Leaderboard() {
     const [sortedPlayers, setSortedPlayers] = useState<PlayerStats[]>([])
+    const lastUpdateRef = useRef(0)
 
-    const { data: playersData } = useReadContracts({
-        contracts: [
-            {
-                address: CONTRACT_ADDRESS,
-                abi: CONTRACT_ABI,
-                functionName: 'getAllPlayers',
-            } as const
-        ]
+    const { data: players, refetch: refetchPlayers } = useReadContract({
+        address: CONTRACT_ADDRESS,
+        abi: CONTRACT_ABI,
+        functionName: 'getAllPlayers',
+        query: {
+            enabled: true,
+            gcTime: UPDATE_INTERVAL
+        }
     })
 
-    const players = playersData?.[0]?.result as GetAllPlayersResult | undefined
-
-    const { data: statsData } = useReadContracts({
-        contracts: players?.map((address) => ({
+    const { data: statsData, refetch: refetchStats } = useReadContracts({
+        contracts: players?.map((player) => ({
             address: CONTRACT_ADDRESS,
             abi: CONTRACT_ABI,
             functionName: 'getUserStats',
-            args: [address],
-        } as const)) || []
+            args: [player],
+        })) ?? [],
+        query: {
+            enabled: true,
+            gcTime: UPDATE_INTERVAL
+        }
     })
+
+    const updateLeaderboard = useCallback(async () => {
+        const now = Date.now()
+        if (now - lastUpdateRef.current < UPDATE_INTERVAL) return
+
+        try {
+            await refetchPlayers()
+            if (players?.length) {
+                await refetchStats()
+            }
+            lastUpdateRef.current = now
+        } catch (error) {
+            console.error('Error updating leaderboard:', error)
+        }
+    }, [refetchPlayers, refetchStats, players])
+
+    useEffect(() => {
+        updateLeaderboard()
+        const interval = setInterval(updateLeaderboard, UPDATE_INTERVAL)
+        return () => clearInterval(interval)
+    }, [updateLeaderboard])
 
     useEffect(() => {
         if (!players || !statsData) return
 
-        const playerStats: PlayerStats[] = players.map((address, index) => ({
-            address: address,
-            clickCount: statsData[index]?.result?.[0] || BigInt(0)
+        const stats: PlayerStats[] = players.map((address, index) => ({
+            address,
+            clickCount: (statsData?.[index]?.result as unknown as bigint[])?.[0] ?? BigInt(0),
         }))
 
-        const sorted = [...playerStats]
-            .sort((a, b) => (b.clickCount > a.clickCount ? 1 : -1))
-            .slice(0, 50)
-
-        setSortedPlayers(sorted)
+        setSortedPlayers(
+            stats
+                .sort((a, b) => (b.clickCount > a.clickCount ? 1 : -1))
+                .slice(0, 50)
+        )
     }, [players, statsData])
 
     return (
@@ -87,7 +111,7 @@ export default function Leaderboard() {
                     </tbody>
                 </table>
                 <div className="text-center text-sm text-[#9c8cfa] mt-4">
-                    The leaderboard updates every hour.
+                    Last updated: {new Date(lastUpdateRef.current).toLocaleTimeString()}
                 </div>
             </div>
         </div>

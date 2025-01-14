@@ -2,13 +2,14 @@
 
 import { useAccount, useReadContract } from 'wagmi'
 import { CONTRACT_ABI, CONTRACT_ADDRESS } from '@/config/contract'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Image from 'next/image'
 
 
 export default function ScoreDisplay() {
     const { address } = useAccount()
     const [score, setScore] = useState<bigint>(BigInt(0))
+    const lastRefetchTimeRef = useRef(0)
 
     const { data: userStats, refetch } = useReadContract({
         address: CONTRACT_ADDRESS,
@@ -18,20 +19,24 @@ export default function ScoreDisplay() {
     })
 
     useEffect(() => {
+        if (!address) return
+
+        const interval = setInterval(() => {
+            const now = Date.now()
+            if (now - lastRefetchTimeRef.current >= 1000 * 10) {
+                refetch()
+                lastRefetchTimeRef.current = now
+            }
+        }, 1000 * 10)
+
+        return () => clearInterval(interval)
+    }, [address, refetch])
+
+    useEffect(() => {
         if (userStats) {
             setScore(userStats[0])
         }
     }, [userStats])
-
-    useEffect(() => {
-        if (!address) return
-
-        const interval = setInterval(() => {
-            refetch()
-        }, 5000)
-
-        return () => clearInterval(interval)
-    }, [address, refetch])
 
     return (
         <div className="inline-flex items-center gap-3 bg-[#3d2487]/20 backdrop-blur-xl rounded-2xl px-5 py-3 shadow-lg border border-[#836EF9]/10">
